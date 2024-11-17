@@ -1,4 +1,4 @@
-import procastro as pa
+# import procastro as pa
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import numpy as np
@@ -10,8 +10,13 @@ import re
 from glob import glob
 import os
 
-matches_column = lambda data, column, value: data.loc[data[column].str.contains(value, case=False)]
-detected_before = lambda data, year: data.loc[data["discovered"].astype(float) <= year]
+
+def matches_column(data, column, value):
+    return data.loc[data[column].str.contains(value, case=False)]
+
+
+def detected_before(data, year):
+    return data.loc[data["discovered"].astype(float) <= year]
 
 
 def set_log_ticks(ax, axis):
@@ -423,20 +428,20 @@ class MassAxis:
                 t.set_color(color)
 
     def _format_axis(self, color):
-        title_forward = {'any_mass': ["Mass ($M_J$)", "Mass ($M_\oplus$)",
+        title_forward = {'any_mass': [r"Mass ($M_J$)", r"Mass ($M_\oplus$)",
                                       lambda x: np.array(x)*c.M_jup/c.M_earth,
                                       'log'],
-                         'any_a': ["Semi-major axis (AU)", "Period around 1 $M_{\odot}$ star (days)",
+                         'any_a': ["Semi-major axis (AU)", r"Period around 1 $M_{\odot}$ star (days)",
                                    lambda x: (np.array(x)**1.5)*365.24,
                                    'log'],
                          'planet_temp': ["Temperature (K)", None],
-                         'planet_flux': ["Flux received ($F_\oplus$)", "Equilibrium Temperature (K)",
+                         'planet_flux': [r"Flux received ($F_\oplus$)", "Equilibrium Temperature (K)",
                                          lambda x: (x*(c.L_sun/c.au/c.au/c.sigma_sb).value/16/np.pi)**0.25,
                                          'log'],
                          'transit_duration': ['Approximate transit duration (h)', None],
-                         'planet_gravity': ['Planet Gravity ($m/s^{2}$', "Compared to Earth",
+                         'planet_gravity': [r'Planet Gravity ($m/s^{2}$', "Compared to Earth",
                                             lambda x: x / 9.7, 'log'],
-                         'transit_modulation': ['$\lambda-to-\lambda$ transit modulation', None],
+                         'transit_modulation': [r'$\lambda-to-\lambda$ transit modulation', None],
                          'transit_snr': ['Expected SNR (arbitrary scale)', None],
                          }
 
@@ -529,10 +534,10 @@ class MassAxis:
     #
     # Reading of databases
     #
-    def read_exoplanets(self, directory='./', planet_albedo=0.3, t_sun=5777):
+    def read_exoplanets(self, directory='./', planet_albedo=0.1, t_sun=5777):
         filename = sorted(glob(directory+'exoplanet*csv'))[-1]
 
-        rec = re.compile("_(\d+)[_.]")
+        rec = re.compile(r"_(\d+)[_.]")
         match = re.search(rec, filename)
         date_in_file = match.group(1)
         try:
@@ -544,7 +549,7 @@ class MassAxis:
         except FileExistsError:
             pass
 
-        exop = pd.read_csv(filename, index_col='# name')
+        exop = pd.read_csv(filename, index_col='name')
 
         # Using Keppler a(P,M)
         exop['semi_major_axis'].fillna(((exop['orbital_period']/365.24)**2 * exop['star_mass'])**(-1/3))
@@ -555,14 +560,15 @@ class MassAxis:
                                              np.sqrt(1-planet_albedo))*exop['star_teff']
 
         exop.loc[:, 'any_mass'] = exop['mass'].copy()
-        exop['any_mass'].fillna(exop['mass_sini'], inplace=True)
-
         exop.loc[:, 'any_a'] = exop['semi_major_axis'].copy()
-        exop['any_a'].fillna((exop['star_mass']*exop['orbital_period']**2)**(1/3), inplace=True)
+        exop.fillna({'any_a': (exop['star_mass']*exop['orbital_period']**2)**(1/3),
+                     'any_mass': exop['mass_sini'],
+                     },
+                    inplace=True)
 
         exop['inversions'] = False
         for name in ['WASP-33 b', 'WASP-18 b', 'WASP-121 b']:
-            exop['inversions'].loc[name] = True
+            exop.loc[name, 'inversions'] = True
 
         exop['transit_duration'] = (2*exop['star_radius']*c.R_sun /
                                     (2*np.pi*exop['any_a']*c.au/(exop['orbital_period']*24)))
