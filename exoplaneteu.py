@@ -4,6 +4,11 @@ from mpl_toolkits import mplot3d
 import numpy as np
 import astropy.constants as c
 
+from PIL import Image
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import re
@@ -46,7 +51,6 @@ def replot_data(function):
             print(f"reploting data here")
         return f
     return wrapper
-
 
 
 class MassAxis:
@@ -109,10 +113,18 @@ class MassAxis:
         self._info_marker = None
         self._info_color = None
 
+        self._keep = {'color': None,
+                      'marker': None,
+                      'marker_size': None,
+                      'annotate': None,
+                      'xlim': None,
+                      'ylim': None,
+                      }
+
         # read exoplanet and Solar System db
-        self.db_exoplanet = None
-        self.db_subset = None
-        self.read_exoplanets()
+        self.db_exoplanet = self.read_exoplanets()
+        self.db_subset = self.db_exoplanet.copy()
+
         self.db_ss = None
         self.read_solar_system()
         if extra_info is not None:
@@ -141,7 +153,8 @@ class MassAxis:
         self.set_data_marker(marker, redraw=False)
         self.set_data_color(color, redraw=False)
         self.set_axes([x_axis, y_axis, z_axis],
-                      [x_scale, y_scale, z_scale])
+                      [x_scale, y_scale, z_scale],
+                      )
 
         self.view3d(angles_3d)
         self.set_lims(xlim, ylim)
@@ -192,12 +205,40 @@ class MassAxis:
             self.axfig[1].view_init(*angles_3d)
 
     def legend(self, title_fontsize=14, loc=None):
-        self._legend = self.axfig[1].legend(title=self.legend_title,
-                                            title_fontsize=title_fontsize, loc=loc)
+        try:
+            self._legend = self.axfig[1].legend(title=self.legend_title,
+                                                title_fontsize=title_fontsize, loc=loc)
+        except UserWarning:
+            pass
 
-    def set_lims(self, xlim=None, ylim=None, axis=None, lims=None, verbose=True, ax=None):
+    def set_lims(self,
+                 xlim=None,
+                 ylim=None,
+                 axis=None,
+                 lims=None,
+                 verbose=True,
+                 ax=None,
+                 ):
+        """
+        Set limits of the plot
+
+        Parameters
+        ----------
+        xlim:
+           X limits
+        ylim:
+           Y limit TwoTuple
+        axis:
+           if set to 'x', 'y', or 'z', then look for TwoTuple of limits in lims
+        lims:
+           TwoTuple of limit if `axis` keyword is set
+        verbose:
+           whether to print output
+        ax
+        """
         if ax is None:
             ax = self.axfig[1]
+
         axis_list = {}
         if axis is not None:
             axis_list[axis] = lims
@@ -236,19 +277,24 @@ class MassAxis:
     # Filters
     #
     @replot_data
-    def set_before(self, before):
-        self.db_subset = detected_before(self.db_subset, before)
+    def set_before(self, before, reset=False):
+        self.db_subset = detected_before(self.db_exoplanet if reset else self.db_subset,
+                                         before)
         self.legend_title = f"Up to {before}"
 
     @replot_data
-    def set_method(self, method):
-        self.db_subset = matches_column(self.db_subset, "detection_type", method)
+    def set_method(self, method, reset=False):
+        self.db_subset = matches_column(self.db_exoplanet if reset else self.db_subset,
+                                        "detection_type", method)
 
     @replot_data
     def set_targets(self, targets):
         self.db_subset = self.db_subset.loc[targets]
 
+    @replot_data
     def reset_subset(self):
+        self.legend_title = f"As of 20{self.props['db_date'][0:2]}/" +\
+                            f"{self.props['db_date'][2:4]}/{self.props['db_date'][4:6]}"
         self.db_subset = self.db_exoplanet
 
     def add_highlight(self, highlight, reset=False):
@@ -266,10 +312,11 @@ class MassAxis:
     def _array_to_plot(self,
                        color, marker, marker_size,
                        data=None, label='',
-                       annotate=None, annotate_size=7):
+                       annotate=None, annotate_size=7,
+                       images=None, image_size=0.09,
+                       zorder=None):
         color = self._get_color(color)
-        # if marker == "x":
-        #     return
+
         if data is None:
             data = self.db_subset
         dataaxis = []
@@ -283,7 +330,8 @@ class MassAxis:
                 color = data[color[0]]
 
         self.axfig[1].scatter(*dataaxis,
-                              marker=marker, label=label, s=marker_size, c=color)
+                              marker=marker, label=label, s=marker_size, c=color,
+                              zorder=zorder)
 
         if annotate is not None and not self.plot3d:
             if annotate == 'index':
@@ -294,6 +342,23 @@ class MassAxis:
             for x, y, lab in zip(dataaxis[0], dataaxis[1], names):
                 if not np.isnan(x) and not np.isnan(y):
                     self.axfig[1].annotate(lab, (x, y), size=annotate_size)
+
+        if images is not None and not self.plot3d:
+            if images == 'index':
+                filenames = data.index
+            else:
+                filenames = data[images]
+
+            for x, y, lab in zip(dataaxis[0], dataaxis[1], filenames):
+                img = np.asarray(Image.open(f'images/{lab.lower()}.png'))
+                axx = self.axfig[1]
+                x_axis, y_axis = self.axfig[0].transFigure.inverted().transform(axx.transData.transform((x, y)))
+
+                pl_ax = self.axfig[0].add_axes((x_axis - image_size/2, y_axis - image_size/2,
+                                                image_size, image_size),
+                                               zorder=zorder)
+                pl_ax.axis('off')
+                pl_ax.imshow(img)
 
     def plot_highlight(self, color='green', marker='o', marker_size=50, use_subset=False):
         if marker is None:
@@ -314,7 +379,7 @@ class MassAxis:
                 plot_from_ss.append(cm)
             elif cm in db.index:
                 plot_from_exop.append(cm)
-            else:
+            elif cm is not None:
                 print(f"Cannot find planet '{cm}' in {'filtered ' if use_subset else ''}database to highlight")
 
         if len(plot_from_ss):
@@ -347,7 +412,8 @@ class MassAxis:
 
         try:
             self._array_to_plot(color, marker, marker_size,
-                                data=self.db_ss)
+                                data=self.db_ss, zorder=15,
+                                images='index')
 
             # array_to_plot(self, data=None, label='', color=None, mark=None, marker_size=None):
             # self.axfig[1].scatter(*axisdata, marker=ss_marker, s=ss_marker_size, c=ss_marker_color)
@@ -358,8 +424,31 @@ class MassAxis:
             all_axis = f"{self._info_axis['x']}, {self._info_axis['y']}{third_axis}"
             print(f"warning: One of the axis ({all_axis}) was not found on Solar System data, skipping")
 
-    def plot_data(self, color=None, marker=None, marker_size=None,
-                  annotate=None):
+    def plot_data(self,
+                  color=None,
+                  marker=None,
+                  marker_size=None,
+                  annotate=None,
+                  xlim=None,
+                  ylim=None,
+                  keep=False,
+                  ):
+        if keep:
+            xlim = self._keep['xlim']
+            ylim = self._keep['ylim']
+            color = self._keep['color']
+            marker = self._keep['marker']
+            marker_size = self._keep['marker_size']
+            annotate = self._keep['annotate']
+
+        self._keep = {'color': color,
+                      'marker': marker,
+                      'marker_size': marker_size,
+                      'annotate': annotate,
+                      'xlim': xlim,
+                      'ylim': ylim,
+                      }
+
         if color is None:
             color = self._info_color
         if marker is None:
@@ -371,6 +460,8 @@ class MassAxis:
             annotate = self.props['annotate']
 
         indata = self.db_subset
+
+        self.set_lims(xlim=xlim, ylim=ylim)
 
         if isinstance(marker, str):
             self._array_to_plot(color, marker, marker_size,
@@ -387,7 +478,7 @@ class MassAxis:
 
     def _fill_data(self):
         # scatter plot
-        self.plot_data()
+        self.plot_data(keep=True)
 
         # present legend
         print(f"Plotted {self.legend_title}, in total {len(self.db_subset)} planets ")
@@ -396,7 +487,8 @@ class MassAxis:
 
         # add with no legend: molec and ss
         if self.props['show_molecules']:
-            self.plot_notna("molecules")
+            self.plot_notna("molecules", color="red",
+               symbol='o', marker_size=80)
         if self.db_ss is not None:
             self.plot_ss()
 
@@ -468,7 +560,7 @@ class MassAxis:
 
                     ax2 = getattr(self.axfig[1], f"twin{'y' if axis == 'x' else 'x'}")()
                     lims = forward(np.array(getattr(self.axfig[1], f'get_{axis}lim')()))
-                    self.set_lims(axis=axis, lims=lims, ax=ax2)
+                    self.set_lims(axis=axis, lims=lims, ax=ax2, verbose=False)
 
                     self._frame_color(color, ax=ax2)
                     set_title_scale(ax2, titles[3], titles[1])
@@ -567,7 +659,10 @@ class MassAxis:
                     inplace=True)
 
         exop['inversions'] = False
-        for name in ['WASP-33 b', 'WASP-18 b', 'WASP-121 b']:
+        for name in ['WASP-33 Ab', 'WASP-18 Ab', 'WASP-121 b']:
+            if name not in exop.index:
+                raise ValueError(f"Planet with inversion f{name} not found in this exoplanet "
+                                 f"version {self.props['db_date']}")
             exop.loc[name, 'inversions'] = True
 
         exop['transit_duration'] = (2*exop['star_radius']*c.R_sun /
@@ -589,8 +684,7 @@ class MassAxis:
         exop['transit_snr'] = exop['transit_modulation'] * 10**(-0.2*exop['mag_v']) * np.sqrt(exop['transit_duration'])
 
         self.props["db_date"] = date_in_file
-        self.db_exoplanet = exop
-        self.db_subset = exop
+        return exop
 
     def read_solar_system(self, filename='solar_system.csv', planet_albedo=0.3, t_sun=5777):
         ss = pd.read_csv(filename, index_col='Name').drop(index="PLUTO")
