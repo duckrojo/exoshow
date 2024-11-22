@@ -31,11 +31,13 @@ class Layer:
                  size_extreme: tuple[float, float] | None = None,
                  zorder=None,
                  images: str | None = None,
-                 image_size: float = 0.9,
+                 image_size: float = 9,
                  annotate: str | None = None,
                  annotate_size: int = 9,
                  legend_color: str = 'k',
                  legend_position: str = 'lower right',
+                 legend_title: str = None,
+                 legend_fontsize: int = 9,
                  ):
         """
 
@@ -64,9 +66,11 @@ class Layer:
 
         self.images = images
         self.image_size = image_size
-        self.image_axes: list[axis] = []
+
         self.legend_color = legend_color
         self.legend_position = legend_position
+        self.legend_title = legend_title
+        self.legend_fontsize = legend_fontsize
 
         if size_extreme is None:
             self.size_extreme = [1, 5]
@@ -88,11 +92,11 @@ class Layer:
                 self.annotate_size, self.annotate,
                 self.color)
 
-    def plot(self,
-             axes: Axes,
-             df: pd.DataFrame,
-             no_images: bool = False,
-             ):
+    def plot_axes_df(self,
+                     axes: Axes,
+                     df: pd.DataFrame,
+                     no_images: bool = False,
+                     ):
         """
         Create the layer using updated values of horizontal and vertical axes as well as latest dataframe
 
@@ -125,8 +129,8 @@ class Layer:
         columns = valid.columns.tolist()
 
         nn = len(valid)
-        xx = valid[xlabel]
-        yy = valid[ylabel]
+        xx = horizontal.scale(valid[xlabel])
+        yy = vertical.scale(valid[ylabel])
 
         if self.images is not None and not no_images:
             if self.images == 'index':
@@ -134,23 +138,21 @@ class Layer:
             else:
                 filenames = df[self.images]
 
-            while len(self.image_axes):
-                self.image_axes.pop().remove()
-
             image_size = self.image_size
 
-            for x, y, lab in zip(valid[xlabel], valid[ylabel], filenames):
+            for x, y, lab in zip(xx, yy, filenames):
                 img = np.asarray(Image.open(Path(__file__).parent.parent/f'images/{lab.lower()}.png'))
 
                 f = ax.figure
+
                 x_axis, y_axis = f.transFigure.inverted().transform(ax.transData.transform((x, y)))
 
-                pl_ax = f.add_axes((x_axis - image_size/2, y_axis - image_size/2,
-                                    image_size, image_size),
+                pl_ax = f.add_axes((x_axis - image_size/200, y_axis - image_size/200,
+                                    image_size/100, image_size/100),
                                    zorder=self.zorder)
                 pl_ax.axis('off')
                 pl_ax.imshow(img)
-                self.image_axes.append(pl_ax)
+
             return
 
         def data_to_points(points):
@@ -175,15 +177,19 @@ class Layer:
             marker_size_scaled = min_p + (marker_size - min_v) * (max_p - min_p) / (max_v - min_v)
 
         else:
-            marker_size_scaled = np.array([(x1 - x0) * self.marker_size / 100] * nn)
+            marker_size_scaled = np.array([3*((x1 - x0) * self.marker_size / 200)**2] * nn)
 
         for m in marker_dict.keys():
             group = np.array([m.lower() in mk.lower() for mk in marker])
+            if group.sum() == 0:
+                continue
+            label = f"{m} ({group.sum()})"
             ax.scatter(xx[group], yy[group],
                        marker=marker_dict[m],
-                       c=list(color[group]), s=list(marker_size_scaled[group]),
+                       c=[color_dict[c] for c in color[group]],
+                       s=list(marker_size_scaled[group]),
                        zorder=self.zorder,
-                       label=m,
+                       label=label,
                        )
 
         if self.annotate is not None:
@@ -197,7 +203,11 @@ class Layer:
                     ax.annotate(lab, (x, y), size=self.annotate_size)
 
         if self.legend_color and self.legend_position:
-            legend = ax.legend(self.legend_position)
+            legend = ax.legend(loc=self.legend_position,
+                               title=self.legend_title,
+                               title_fontsize=self.legend_fontsize,
+                               fontsize=self.legend_fontsize,
+                               )
 
             legend.get_title().set_color(self.legend_color)
             for t in legend.get_texts():

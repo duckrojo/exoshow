@@ -75,6 +75,7 @@ Start from empty figure
 
     def new_ax(self) -> plt.Axes:
         ax = self.fig.add_subplot(111)
+        ax.axis('off')
         self.axes.append(ax)
 
         return ax

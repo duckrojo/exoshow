@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "exoshow"
-version = "0.0.0"
+version = "0.0.0.post5.dev0+5667b7d"
 description = ""
 authors = ["duckrojo <3063609+duckrojo@users.noreply.github.com>"]
 readme = "README.md"

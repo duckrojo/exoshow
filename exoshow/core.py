@@ -18,41 +18,48 @@ class ExoShow:
                  ydata='any_mass',
                  title=None,
                  marker='x',
-                 marker_size=60,
+                 marker_size=1.2,
                  color='k',
                  legend_color='k',
+                 legend_title=None,
                  ):
 
         if db_dir is None:
             db_dir = Path(__file__).resolve().parent.parent / 'db'
 
-        date, self.db_exoplanet = db.read_exoplanets(db_dir, date=db_date)
+        self.date, self.db_exoplanet = db.read_exoplanets(db_dir, date=db_date)
+
         self.db_subset = self.db_exoplanet.copy()
         self.db_ss = db.read_solar_system()
-        self.ss_props = dict(marker=None, marker_size=None, color=None, images=None)
 
         if out_dir is None:
-            out_dir = Path(__file__).resolve().parent.parent / 'output' / date
+            out_dir = Path(__file__).resolve().parent.parent / 'output' / self.date
         else:
             out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         self.out_dir = out_dir
 
+        self.axes = Axes(xdata, ydata, self.db_subset,
+                         color=color,
+                         title=title,
+                         )
+
         self.layers: list[Layer] = []
+
+        if legend_title is None:
+            legend_title = f"As of {self.date[:4]}.{self.date[4:6]}.{self.date[6:8]}"
+
+        self.add_layer(marker=marker,
+                       color=color,
+                       marker_size=marker_size,
+                       legend_color=legend_color,
+                       legend_title=legend_title,
+                       )
 
         if include_ss:
             self.ss_layer = self.add_layer_ss()
         else:
             self.ss_layer = None
-        self.axes = Axes(xdata, ydata, self.db_subset,
-                         color=color,
-                         title=title,
-                         )
-        self.add_layer(marker=marker,
-                       color=color,
-                       marker_size=marker_size,
-                       legend_color=legend_color,
-                       )
 
     def fix_xlims(self, value=None, margin=None):
         """
@@ -153,13 +160,16 @@ Fixes ylim according to specific min-max or to the current range of dataset
     def show(self):
         self._plot().show()
 
-    def save(self, filename, postfix=".png"):
+    def save(self, filename, postfix=".png",
+             out_dir=None,
+             ):
         f = self._plot()
 
         filename = self.out_dir/filename
+
         if not len(Path(filename).suffixes):
-            filename /= postfix
-        filename.parent.mkdir(parents=True, exist_ok=True)
+            filename = f"{str(filename)}{postfix}"
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
 
         f.savefig(filename)
 
@@ -174,10 +184,10 @@ Plots the figure. Before this call, no matplotlib command was issued.
         ax = self.axes.plot()
 
         for layer in self.layers:
-            layer.plot(self.axes, self.db_subset)
+            layer.plot_axes_df(self.axes, self.db_subset)
 
         if self.ss_layer is not None:
-            self.ss_layer.plot(self.axes, self.db_ss)
+            self.ss_layer.plot_axes_df(self.axes, self.db_ss)
 
         return ax.get_figure()
 
@@ -189,7 +199,21 @@ Plots the figure. Before this call, no matplotlib command was issued.
 
     def db_reset(self):
         self.db_subset = self.db_exoplanet.copy()
-        self.ss_props = {}
+        return self
+
+    def before(self, year, reset=False, legend_title=None):
+        if reset:
+            self.db_reset()
+        if legend_title is not None:
+            self.layers[0].legend_title = legend_title
+        self.db_subset = self.db_subset.loc[self.db_subset['discovered'].astype(float) <= year]
+        return self
+
+    def filter_str(self, **kwargs):
+        for key, value in kwargs.items():
+            self.db_subset = self.db_subset.loc[self.db_subset[key].str.contains(value, case=False)]
+
+        return self
 
     def db_add_column(self,
                       permanent=False,

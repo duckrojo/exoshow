@@ -73,7 +73,7 @@ class OneAxes:
                 limits = 10 ** self.limits
             else:
                 limits = self.limits
-            print(f"{direction.upper()}-axis '{label}' ({string}) limit are [{limits[0]:.1g}, {limits[1]:.1g}]")
+            print(f"{direction.upper()}-axis '{label}' ({self.string}) limits are [{limits[0]:.2g}, {limits[1]:.2g}]")
 
     def set_label(self, label, string=None):
         if string is None:
@@ -85,6 +85,11 @@ class OneAxes:
         self.label = label
 
         return label, string
+
+    def scale(self, value):
+        if self.logarithmic:
+            return np.log10(value)
+        return value
 
     def set_logarithmic(self, use_log):
         self.logarithmic = use_log
@@ -146,31 +151,38 @@ class OneAxes:
         getattr(ax, f'{self.direction}axis').label.set_color(self.color[0])
         plt.setp(plt.getp(ax, f'{self.direction}ticklabels'), color=self.color[0])
         getattr(ax, f'set_{self.direction}label')(self.string)
-
         if self.logarithmic:
-            limits = np.array(self.limits).astype(int) + np.array([0, 1])
-            dtick = ((limits[1] - limits[0]) / 5 + 0.5).astype(int)
-            if dtick == 0:
-                dtick = 1
-            tick_vals = limits[0] + dtick * np.arange(int((limits[1] - limits[0]) / dtick) + 1)
-            ticks = tick_vals
-            labels = [f"$10^{{{t}}}$" for t in tick_vals]
-            getattr(ax, f"set_{self.direction}ticks")(ticks)
-            getattr(ax, f"set_{self.direction}ticklabels")(labels)
-            minor = np.log10(np.array([np.array([1, 2, 3, 4, 5, 6, 7, 8, 9.0]) * (10.0 ** major)
-                                       for major in range(ticks[0] - 1, ticks[-1])]).flatten())
-            getattr(ax, f"set_{self.direction}ticks")(minor, minor=True)
+            self._set_log_ticks(ax, self.limits)
+        getattr(ax, f'set_{self.direction}lim')(self.limits)
 
         if self.opposite is not None:
             # if configured opposite axis and 2D
-            def forward(x):
+            def forward(x) -> np.ndarray:
                 if self.logarithmic:
                     x = 10**x
                 return self.opposite[1](x)
 
             ax2 = getattr(ax, f"twin{'y' if self.direction == 'x' else 'x'}")()
             limits = forward(np.array(getattr(ax, f'get_{self.direction}lim')()))
-            getattr(ax2, f"set_{self.direction}lim")(limits)
             getattr(ax2, f'set_{self.direction}label')(self.opposite[0])
+            if self.logarithmic:
+                limits = np.log10(limits)
+                self._set_log_ticks(ax2, limits)
+            getattr(ax2, f'set_{self.direction}lim')(limits)
 
         return self
+
+    def _set_log_ticks(self, ax, limits):
+        limits = np.array(limits).astype(int) + np.array([0, 1])
+        dtick = ((limits[1] - limits[0]) / 5 + 0.5).astype(int)
+        if dtick == 0:
+            dtick = 1
+        tick_vals = limits[0] + dtick * np.arange(int((limits[1] - limits[0]) / dtick) + 1)
+        ticks = tick_vals
+        labels = [f"$10^{{{t}}}$" for t in tick_vals]
+        getattr(ax, f"set_{self.direction}ticks")(ticks)
+        getattr(ax, f"set_{self.direction}ticklabels")(labels)
+        major_range = range(limits[0] - 1, limits[1])
+        minor = np.log10(np.array([np.array([1, 2, 3, 4, 5, 6, 7, 8, 9.0]) * (10.0 ** major)
+                                   for major in major_range]).flatten())
+        getattr(ax, f"set_{self.direction}ticks")(minor, minor=True)
