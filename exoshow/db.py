@@ -12,7 +12,7 @@ def read_exoplanets(directory,
                     planet_albedo=0.1,
                     t_sun=5777,
                     ):
-    filename = sorted(glob(directory + 'exoplanet*csv'))[-1]
+    filename = sorted(glob(str(directory / 'exoplanet*csv')))[-1]
 
     rec = re.compile(r"_(\d+)[_.]")
     match = re.search(rec, filename)
@@ -73,7 +73,7 @@ def read_solar_system(filename=None,
                       ):
 
     if filename is None:
-        filename = Path(__file__).resolve().parent.parent / 'db/solar_system.csv',
+        filename = Path(__file__).resolve().parent.parent / 'db/solar_system.csv'
 
     ss = pd.read_csv(filename, index_col='Name').drop(index="PLUTO")
 

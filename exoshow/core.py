@@ -1,49 +1,11 @@
 # properties initialization
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
-import astropy.constants as c
+from matplotlib import pyplot as plt
 
 from exoshow import db
 from exoshow.axis import Axes
 from exoshow.layer import Layer
-
-default_color_dict = {'detection_type': {"transit": 'blue', "imaging": 'red',
-                                         "radial velocity": 'green', "microlensing": 'yellow',
-                                         "astrometry": 'orange', "timing": 'cyan',
-                                         "TTV": 'purple',
-                                         }
-                      }
-default_marker_dict = {'detection_type': {"transit": "x", "imaging": "^", "radial velocity": ".",
-                                          "microlensing": "*", "astrometry": "s",
-                                          "timing": "v", "TTV": "o",
-                                          }
-                       }
-
-# for each column, it shows either a 4-tupe: title top/left, title bottom/right, formula
-default_title = {'any_mass': ((r"Mass ($M_\oplus$)", 'log'),
-                              (r"Mass ($M_J$)", lambda x: np.array(x) * c.M_jup / c.M_earth)
-                              ),
-                 'any_a': ((r"Period around 1 $M_{\odot}$ star (days)", 'log'),
-                           ("Semi-major axis (AU)", lambda x: (np.array(x) ** 1.5) * 365.24)
-                           ),
-                 'planet_temp': (("Temperature (K)", None),
-                                 ),
-                 'planet_flux': (("Equilibrium Temperature (K)", 'log'),
-                                 (r"Flux received ($F_\oplus$)",
-                                  lambda x: (x * (c.L_sun / c.au / c.au / c.sigma_sb).value / 16 / np.pi) ** 0.25)
-                                 ),
-                 'transit_duration': (('Approximate transit duration (h)', None),
-                                      ),
-                 'planet_gravity': (("Compared to Earth", 'log'),
-                                    (r'Planet Gravity ($m/s^{2}$', lambda x: x / 9.7)
-                                    ),
-                 'transit_modulation': ((r'$\lambda-to-\lambda$ transit modulation', 'linear'),
-                                        ),
-                 'transit_snr': (('Expected SNR (arbitrary scale)', 'linear'),
-                                 )
-                 }
 
 
 class ExoShow:
@@ -52,6 +14,13 @@ class ExoShow:
                  out_dir=None,
                  db_date=None,
                  include_ss=True,
+                 xdata='any_a',
+                 ydata='any_mass',
+                 title=None,
+                 marker='x',
+                 marker_size=60,
+                 color='k',
+                 legend_color='k',
                  ):
 
         if db_dir is None:
@@ -69,38 +38,88 @@ class ExoShow:
         out_dir.mkdir(parents=True, exist_ok=True)
         self.out_dir = out_dir
 
-        self.include_ss = include_ss
         self.layers: list[Layer] = []
-        self.horizontal = Axes(self.db_subset, 'any_semi_major_axis', 'x')
-        self.vertical = Axes(self.db_subset, 'any_mass', 'y')
-        self.ss_layer = self.add_layer_ss()
 
-        self._fig, self._ax = plt.subplot(111)
+        if include_ss:
+            self.ss_layer = self.add_layer_ss()
+        else:
+            self.ss_layer = None
+        self.axes = Axes(xdata, ydata, self.db_subset,
+                         color=color,
+                         title=title,
+                         )
+        self.add_layer(marker=marker,
+                       color=color,
+                       marker_size=marker_size,
+                       legend_color=legend_color,
+                       )
+
+    def fix_xlims(self, value=None, margin=None):
+        """
+Fixes xlim according to specific min-max or to the current range of dataset
+        Parameters
+        ----------
+        value: None, (float, float)
+           Either None to take limits from current database, or explicit (min,max)
+        margin: None, float
+           The margin to use for plotting. if None then use matplotlib.rcparam['margin']
+
+        Returns
+        -------
+        object
+        """
+        if value is None:
+            value = self.db_subset
+        self.axes.fix_xlims(value, margin=margin)
+
+    def fix_ylims(self, value=None, margin=None):
+        """
+Fixes ylim according to specific min-max or to the current range of dataset
+        Parameters
+        ----------
+        value: None, (float, float)
+           Either None to take limits from current database, or explicit (min,max)
+        margin: None, float
+           The margin to use for plotting. if None then use matplotlib.rcparam['margin']
+
+        Returns
+        -------
+        object
+        """
+        if value is None:
+            value = self.db_subset
+        self.axes.fix_ylims(value, margin=margin)
+
+    def fix_lims(self, margin=None):
+        self.fix_xlims(margin=margin)
+        self.fix_ylims(margin=margin)
+
+        return self
+
+    def set_xaxis(self, label,
+                  string=None,
+                  logarithmic=None,
+                  inverted=False,
+                  ):
+        self.axes.set_xdata(label, string=string, logarithmic=logarithmic, inverted=inverted)
+
+    def set_yaxis(self, label,
+                  string=None,
+                  logarithmic=None,
+                  inverted=False,
+                  ):
+        self.axes.set_ydata(label, string=string, logarithmic=logarithmic, inverted=inverted)
 
     def add_layer_ss(self, zorder=20, **kwargs):
         return self.add_layer(zorder=zorder, store=False, images="index", **kwargs)
 
     def add_layer(self, zorder=1, store=True,
                   filter_by_name=None,
-                  marker='x', color='k',
-                  marker_size: float = 1,
-                  size_extreme: tuple[float, float] | None = None,
-                  images: str | None = None,
-                  image_size: float = 0.9,
-                  annotate: str | None = None,
-                  annotate_size: int = 9,
+                  **kwargs,
                   ) -> Layer:
-        layer = Layer(self._fig,
-                      ids=filter_by_name,
-                      marker=marker,
-                      color=color,
-                      marker_size=marker_size,
-                      size_extreme=size_extreme,
+        layer = Layer(ids=filter_by_name,
                       zorder=zorder,
-                      images=images,
-                      image_size=image_size,
-                      annotate=annotate,
-                      annotate_size=annotate_size,
+                      **kwargs,
                       )
 
         if store:
@@ -108,12 +127,22 @@ class ExoShow:
 
         return layer
 
-    def plot(self):
-        for layer in self.layers:
-            layer.plot(self.db_subset, self.horizontal, self.vertical)
+    def del_layer(self, position=-1):
+        """
+        Delete layer
 
-        if self.ss_layer is not None:
-            self.ss_layer.plot(self.db_ss, self.horizontal, self.vertical)
+        Parameters
+        ----------
+        position: int
+        id of layer to delete. if value is larger than the number of layers, then it will delete the last one.
+
+        Returns
+        -------
+
+        """
+        if -len(self.layers) <= position < len(self.layers):
+            position = -1
+        self.layers.pop(position)
 
     ######################
     #
@@ -121,13 +150,36 @@ class ExoShow:
     #
     ######################
 
+    def show(self):
+        self._plot().show()
+
     def save(self, filename, postfix=".png"):
+        f = self._plot()
+
         filename = self.out_dir/filename
         if not len(Path(filename).suffixes):
             filename /= postfix
         filename.parent.mkdir(parents=True, exist_ok=True)
 
-        self._ax.savefig(filename)
+        f.savefig(filename)
+
+    def _plot(self) -> plt.Figure:
+        """
+Plots the figure. Before this call, no matplotlib command was issued.
+
+        Returns
+        -------
+        the matplotlib.figure that holds the plot
+        """
+        ax = self.axes.plot()
+
+        for layer in self.layers:
+            layer.plot(self.axes, self.db_subset)
+
+        if self.ss_layer is not None:
+            self.ss_layer.plot(self.axes, self.db_ss)
+
+        return ax.get_figure()
 
     #######################################
     #

@@ -1,9 +1,11 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from PIL import Image
-from matplotlib import pyplot as plt
+from matplotlib.pyplot import axis
 
-from exoshow import default_marker_dict, default_color_dict
+from exoshow.definitions import default_color_dict, default_marker_dict
 from exoshow.axis import Axes
 
 
@@ -15,14 +17,13 @@ def _get_discrete_dicts(df, label, dictionary, columns, default):
         else:
             out_dict = dictionary[label]
     else:
-        output = [None] * len(df)
+        output = np.array([None] * len(df))
         out_dict = {None: label}
     return output, out_dict
 
 
 class Layer:
     def __init__(self,
-                 figure: plt.Figure,
                  ids: list[str] | None = None,
                  marker: str = 'x',
                  color: str = 'k',
@@ -33,6 +34,8 @@ class Layer:
                  image_size: float = 0.9,
                  annotate: str | None = None,
                  annotate_size: int = 9,
+                 legend_color: str = 'k',
+                 legend_position: str = 'lower right',
                  ):
         """
 
@@ -44,8 +47,6 @@ class Layer:
             to use images, set the str to column value
         image_size:
             percent extent of images
-        figure: plt.Figure
-            matplotlib figure where the layer will be drawn
         ids: [str, ...], None
             name of targets that can be drawn in this layer. If None, all targets will be drawn/
         marker: str
@@ -53,9 +54,9 @@ class Layer:
         color: str
             column with color info, or color value
         marker_size: str|float
-           name of column with size info (to be scaled accoridng to size_extreme), or size of marker in percent of axis
+           name of column with size info (to be scaled according to size_extreme), or size of marker in percent of axis
         size_extreme: (float, float)
-           Min and Max size of the marker in percent if taken from column value
+           Min and Max size of the marker in percent if taken from column value. By default, 1%-5%
         """
         self.ids = ids
 
@@ -63,7 +64,9 @@ class Layer:
 
         self.images = images
         self.image_size = image_size
-        self.image_axes = []
+        self.image_axes: list[axis] = []
+        self.legend_color = legend_color
+        self.legend_position = legend_position
 
         if size_extreme is None:
             self.size_extreme = [1, 5]
@@ -78,45 +81,16 @@ class Layer:
         self.marker_dicts = default_marker_dict
         self.color_dicts = default_color_dict
 
-        self.ax = figure.add_subplot(111)
-        self.ax.axis('off')
-
-    def plot_images(self, df, horizontal, vertical):
-        if self.images == 'index':
-            filenames = df.index
-        else:
-            filenames = df[self.images]
-
-        xlabel = horizontal.label
-        ylabel = vertical.label
-
-        self.ax.set_xlims(horizontal.limits)
-        self.ax.set_ylims(vertical.limits)
-
-        valid = df if self.ids is None else df.loc[df.index.isin(self.ids)]
-        image_size = self.image_size
-
-        if len(self.image_axes):
-            for ax in self.image_axes:
-                ax.remove()
-
-        for x, y, lab in zip(valid[xlabel], valid[ylabel], filenames):
-            img = np.asarray(Image.open(f'images/{lab.lower()}.png'))
-
-            axx = self.ax
-            x_axis, y_axis = axx.transFigure.inverted().transform(axx.transData.transform((x, y)))
-
-            pl_ax = self.ax.add_axes((x_axis - image_size/2, y_axis - image_size/2,
-                                      image_size, image_size),
-                                     zorder=self.zorder)
-            pl_ax.axis('off')
-            pl_ax.imshow(img)
-            self.image_axes.append(pl_ax)
+    def __hash__(self):
+        return (self.ids,
+                self.images, self.image_size,
+                self.marker, self.size_extreme, self.marker_size,
+                self.annotate_size, self.annotate,
+                self.color)
 
     def plot(self,
+             axes: Axes,
              df: pd.DataFrame,
-             horizontal: Axes,
-             vertical: Axes,
              no_images: bool = False,
              ):
         """
@@ -124,27 +98,28 @@ class Layer:
 
         Parameters
         ----------
+        axes:
+           Axes information where to plot
         no_images: bool
            if True, then it will not show images even if set
         df
-        horizontal
-        vertical
 
         Returns
         -------
 
         """
 
-        if self.images is not None and not no_images:
-            return self.plot_images(df, horizontal, vertical)
+        ax = axes.new_ax()
+        horizontal = axes.x_axes
+        vertical = axes.y_axes
 
         xlabel = horizontal.label
         ylabel = vertical.label
 
         xlims = horizontal.limits
         ylims = vertical.limits
-        self.ax.set_xlims(xlims)
-        self.ax.set_ylims(ylims)
+        ax.set_xlim(xlims)
+        ax.set_ylim(ylims)
 
         valid = df if self.ids is None else df.loc[df.index.isin(self.ids)]
         columns = valid.columns.tolist()
@@ -153,8 +128,33 @@ class Layer:
         xx = valid[xlabel]
         yy = valid[ylabel]
 
+        if self.images is not None and not no_images:
+            if self.images == 'index':
+                filenames = df.index
+            else:
+                filenames = df[self.images]
+
+            while len(self.image_axes):
+                self.image_axes.pop().remove()
+
+            image_size = self.image_size
+
+            for x, y, lab in zip(valid[xlabel], valid[ylabel], filenames):
+                img = np.asarray(Image.open(Path(__file__).parent.parent/f'images/{lab.lower()}.png'))
+
+                f = ax.figure
+                x_axis, y_axis = f.transFigure.inverted().transform(ax.transData.transform((x, y)))
+
+                pl_ax = f.add_axes((x_axis - image_size/2, y_axis - image_size/2,
+                                    image_size, image_size),
+                                   zorder=self.zorder)
+                pl_ax.axis('off')
+                pl_ax.imshow(img)
+                self.image_axes.append(pl_ax)
+            return
+
         def data_to_points(points):
-            return self.ax.dpi_scale_transform.inverted().transform(self.ax.transData.transform(points))*72
+            return ax.figure.dpi_scale_trans.inverted().transform(ax.transData.transform(points))*72
 
         marker, marker_dict = _get_discrete_dicts(valid, self.marker, self.marker_dicts, columns,
                                                   ["x", "^", ".", "*", "s", "v", "o"])
@@ -178,13 +178,13 @@ class Layer:
             marker_size_scaled = np.array([(x1 - x0) * self.marker_size / 100] * nn)
 
         for m in marker_dict.keys():
-            group = marker == m
-            self.ax.scatter(xx[group], yy[group],
-                            marker=marker_dict[m],
-                            color=color[group], s=marker_size_scaled[group],
-                            zorder=self.zorder,
-                            label=m,
-                            )
+            group = np.array([m.lower() in mk.lower() for mk in marker])
+            ax.scatter(xx[group], yy[group],
+                       marker=marker_dict[m],
+                       c=list(color[group]), s=list(marker_size_scaled[group]),
+                       zorder=self.zorder,
+                       label=m,
+                       )
 
         if self.annotate is not None:
             if self.annotate == 'index':
@@ -194,20 +194,11 @@ class Layer:
 
             for x, y, lab in zip(xx, yy, names):
                 if not np.isnan(x) and not np.isnan(y):
-                    self.ax.annotate(lab, (x, y), size=self.annotate_size)
+                    ax.annotate(lab, (x, y), size=self.annotate_size)
 
-    def axes(self,
-             horizontal: Axes,
-             vertical: Axes,
-             ):
-        self.ax.axis('on')
-        horizontal.in_axes(self.ax)
-        vertical.in_axes(self.ax)
-        self.ax.title.set_color(self.color)
+        if self.legend_color and self.legend_position:
+            legend = ax.legend(self.legend_position)
 
-        # todo: check legend
-        if self._legend is not None:
-            self._legend.get_title().set_color(color)
-            for t in self._legend.get_texts():
-                t.set_color(color)
-
+            legend.get_title().set_color(self.legend_color)
+            for t in legend.get_texts():
+                t.set_color(self.legend_color)

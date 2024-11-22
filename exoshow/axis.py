@@ -1,157 +1,94 @@
-import matplotlib
-import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from exoshow import default_title
+from .one_axis import OneAxes
 
 
 class Axes:
-    """"
-
-    Attributes
-    ----------
-    limits: stores the min and max of the limits (with logarithm applied if in that scale)
-    """
-    def __init__(self,
-                 limits: pd.DataFrame | tuple[float, float],
-                 label: str,
-                 direction: str,
-                 string: str = None,
-                 logarithmic: bool | None = None,
-                 inverted: bool = False,
-                 verbose: bool = True,
-                 color: str = 'k',
-                 ):
+    def __init__(self, xlabel, ylabel, df, color='k', title=""):
         """
 
         Parameters
         ----------
-        logarithmic:
-           whether to use logarithmic scale. If None (default) it uses what is defined in default_title
-        inverted
-           whether to create a decreasing axes (not used when set explicitly)
-        verbose:
-           whether to print the final limits.
-        limits: pd.DataFrame, tuple[float, float]
-           explicit initial limits of the axes, or dataframe for auto-calculation from the value of label column
-        label: str
-           name of column in database
-        direction: str
-            either 'x' or 'y'
-        string:
-            human-readable version of label
-
+        xlabel: str
+            dataframe column label to use in X-range
+        ylabel: str
+            dataframe column label to use in Y-range
+        df: pd.DataFrame
+             database from where to get initial values
+        color: str, (str, str, str, str, str)
+             either the color to use everywhere, or the color to use in tile, left, right, bottom, top axes.
         """
-        self.label = label
-        self.inverted = inverted
-        self.color = color
+        self.fig = None
+        self.axes = []
+        self.title = title
+        self._color = self.set_color(color)
+        self.x_axes = OneAxes(df, xlabel, 'x',
+                              color=(self._color[3], self._color[4]),
+                              )
+        self.y_axes = OneAxes(df, ylabel, 'y',
+                              color=(self._color[1], self._color[2]),
+                              )
 
-        if string is None:
-            if label in default_title:
-                string = default_title[label][0][0]
-            else:
-                string = ' '.join([s.capitalize() for s in label.split('_')])
-        self.string = string
+    def set_xdata(self, label, string=None, logarithmic=None, inverted=False):
+        self.set_data("x", label, string, logarithmic, inverted)
 
-        if logarithmic is None:
-            if label in default_title:
-                logarithmic = default_title[label][0][1] == 'log'
-            else:
-                logarithmic = False
-        self.logarithmic = logarithmic
+    def set_ydata(self, label, string=None, logarithmic=None, inverted=False):
+        self.set_data("y", label, string, logarithmic, inverted)
 
-        if direction.lower() not in ['x', 'y']:
-            raise ValueError('direction must be either "x" or "y"')
-        self.direction = direction.lower()
+    def set_data(self, direction, label, string=None, logarithmic=None, inverted=False):
+        match direction:
+            case 'x':
+                axes = self.x_axes
+            case 'y':
+                axes = self.y_axes
+            case _:
+                raise ValueError("direction must be 'x' or 'y'")
 
-        if isinstance(limits, pd.DataFrame):
-            self.limits = self.set_limits(limits[label])
-        else:
-            self.limits = self.set_limits(limits)
+        axes.set_label(label, string)
+        axes.set_logarithmic(logarithmic)
+        axes.set_inverted(inverted)
 
-        if label in default_title and len(default_title[label]) == 2:
-            self.opposite = default_title[label][1]
-        else:
-            self.opposite = None
+    def set_color(self, color):
+        if isinstance(color, str):
+            color = (color,)*5
+        elif len(color) != 5:
+            raise ValueError(f'Invalid color specification: {color}')
 
-        if verbose:
-            if logarithmic:
-                limits = 10 ** self.limits
-            else:
-                limits = self.limits
-            print(f"{direction.upper()}-axis '{label}' ({string}) limit are [{limits[0]:.1g}, {limits[1]:.1g}]")
+        self._color = color
 
-    def set_limits(self,
-                   data,
-                   ) -> tuple[float, float]:
+        return color
+
+    def fix_xlims(self, value, margin=None):
+        self.x_axes.set_limits(value, margin=margin)
+
+    def fix_ylims(self, value, margin=None):
+        self.y_axes.set_limits(value, margin=margin)
+
+    def clear(self):
         """
-
-        Parameters
-        ----------
-        data: either a pandas Series, list, tuple with the data, or a (min, max) tuple
-
-        Returns
-        -------
-        min and max limits found
-
+Start from empty figure
         """
-        if isinstance(data, (pd.Series, list, tuple)):
-            limits = np.array(min(data), max(data))
-            if self.logarithmic:
-                limits = np.log10(limits)
-            if self.inverted:
-                limits = np.array(limits[1], limits[0])
+        if self.fig is None:
+            self.fig = plt.figure()
+        self.fig.clf()
 
-            delta = limits[1] - limits[0]
-            margin = delta * matplotlib.rcParams[f"axes.{self.direction}margin"]
+    def new_ax(self) -> plt.Axes:
+        ax = self.fig.add_subplot(111)
+        self.axes.append(ax)
 
-            self.limits = np.array(limits[0] - margin, limits[1] + margin)
-        else:
-            self.limits = np.log10(data) if self.logarithmic else data
+        return ax
 
-        return self.limits
+    def plot(self,
+             ):
+        self.clear()
+        ax = self.new_ax()
+        ax.axis('on')
 
-    def in_axes(self,
-                ax):
+        self.x_axes.in_axes(ax)
+        self.y_axes.in_axes(ax)
 
-        if self.direction == 'x':
-            ax.spines['bottom'].set_color(self.color)
-            ax.spines['top'].set_color(self.color)
-        elif self.direction == 'y':
-            ax.spines['right'].set_color(self.color)
-            ax.spines['left'].set_color(self.color)
-        else:
-            raise ValueError('direction must be either "x" or "y"')
+        ax.title.set_color(self._color[0])
+        ax.set_title(self.title)
 
-        getattr(ax, f'{self.direction}axis').label.set_color(self.color)
-        plt.setp(plt.getp(ax, f'{self.direction}ticklabels'), color=self.color)
-        getattr(ax, f'set_{self.direction}label')(self.string)
-
-        if self.logarithmic:
-            limits = np.array(self.limits).astype(int) + np.array([0, 1])
-            dtick = ((limits[1] - limits[0]) / 5 + 0.5).astype(int)
-            if dtick == 0:
-                dtick = 1
-            tick_vals = limits[0] + dtick * np.arange(int((limits[1] - limits[0]) / dtick) + 1)
-            ticks = tick_vals
-            labels = [f"$10^{{{t}}}$" for t in tick_vals]
-            getattr(ax, f"set_{self.direction}ticks")(ticks)
-            getattr(ax, f"set_{self.direction}ticklabels")(labels)
-            minor = np.log10(np.array([np.array([1, 2, 3, 4, 5, 6, 7, 8, 9.0]) * (10.0 ** major)
-                                       for major in range(ticks[0] - 1, ticks[-1])]).flatten())
-            getattr(ax, f"set_{self.direction}ticks")(minor, minor=True)
-
-        if self.opposite is not None:
-            # if configured opposite axis and 2D
-            def forward(x):
-                if self.logarithmic:
-                    x = 10**x
-                return self.opposite[1](x)
-
-            ax2 = getattr(ax, f"twin{'y' if self.direction == 'x' else 'x'}")()
-            limits = forward(np.array(getattr(ax, f'get_{self.direction}lim')()))
-            getattr(ax2, f"set_{self.direction}lim")(limits)
-            getattr(ax2, f'set_{self.direction}label')(self.opposite[0])
-
-        return self
+        return ax
