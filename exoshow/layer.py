@@ -20,7 +20,7 @@ def _get_discrete_dicts(df, label, dictionary, columns, default):
     return output, out_dict
 
 
-class layer:
+class Layer:
     def __init__(self,
                  figure: plt.Figure,
                  ids: list[str] | None = None,

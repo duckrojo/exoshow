@@ -6,6 +6,8 @@ import numpy as np
 import astropy.constants as c
 
 from exoshow import db
+from exoshow.axis import Axes
+from exoshow.layer import Layer
 
 default_color_dict = {'detection_type': {"transit": 'blue', "imaging": 'red',
                                          "radial velocity": 'green', "microlensing": 'yellow',
@@ -68,48 +70,50 @@ class ExoShow:
         self.out_dir = out_dir
 
         self.include_ss = include_ss
+        self.layers: list[Layer] = []
+        self.horizontal = Axes(self.db_subset, 'any_semi_major_axis', 'x')
+        self.vertical = Axes(self.db_subset, 'any_mass', 'y')
+        self.ss_layer = self.add_layer_ss()
 
         self._fig, self._ax = plt.subplot(111)
 
+    def add_layer_ss(self, zorder=20, **kwargs):
+        return self.add_layer(zorder=zorder, store=False, images="index", **kwargs)
 
-    def add_layer(self, zorder=1, props=None):
+    def add_layer(self, zorder=1, store=True,
+                  filter_by_name=None,
+                  marker='x', color='k',
+                  marker_size: float = 1,
+                  size_extreme: tuple[float, float] | None = None,
+                  images: str | None = None,
+                  image_size: float = 0.9,
+                  annotate: str | None = None,
+                  annotate_size: int = 9,
+                  ) -> Layer:
+        layer = Layer(self._fig,
+                      ids=filter_by_name,
+                      marker=marker,
+                      color=color,
+                      marker_size=marker_size,
+                      size_extreme=size_extreme,
+                      zorder=zorder,
+                      images=images,
+                      image_size=image_size,
+                      annotate=annotate,
+                      annotate_size=annotate_size,
+                      )
 
+        if store:
+            self.layers.append(layer)
 
-    def plot_ss(self, marker=None, marker_size=None, color=None, images=True):
-        """
-        Keeps previous use of parameters until reset
+        return layer
 
-        Parameters
-        ----------
-        images
-        marker
-        marker_size
-        color
-        """
-        if marker is None:
-            marker = self.ss_props['marker']
-        if marker_size is None:
-            marker_size = self.ss_props['marker_size']
-        if color is None:
-            color = self.ss_props['color']
-        if images is None:
-            images = self.ss_props['images']
-        self.ss_props = dict(marker=marker, marker_size=marker_size, color=color, images=images)
+    def plot(self):
+        for layer in self.layers:
+            layer.plot(self.db_subset, self.horizontal, self.vertical)
 
-        self._array_to_plot(color, marker, marker_size,
-                            data=self.db_ss, zorder=15,
-                            images='index' if images else None)
-
-        # try:
-        #
-        #     # array_to_plot(self, data=None, label='', color=None, mark=None, marker_size=None):
-        #     # self.axfig[1].scatter(*axisdata, marker=ss_marker, s=ss_marker_size, c=ss_marker_color)
-        #     # plot_crossmarks(ax, ss, ['JUPITER', 'EARTH'], [x_axis, y_axis, z_axis],
-        #     #                 [x_scale, y_scale, z_scale])
-        # except KeyError:
-        #     third_axis = f', {self._info_axis["z"]}' if self._info_axis["z"] is not None else ''
-        #     all_axis = f"{self._info_axis['x']}, {self._info_axis['y']}{third_axis}"
-        #     print(f"warning: One of the axis ({all_axis}) was not found on Solar System data, skipping")
+        if self.ss_layer is not None:
+            self.ss_layer.plot(self.db_ss, self.horizontal, self.vertical)
 
     ######################
     #
@@ -119,7 +123,7 @@ class ExoShow:
 
     def save(self, filename, postfix=".png"):
         filename = self.out_dir/filename
-        if not len(str(filename).suffixes):
+        if not len(Path(filename).suffixes):
             filename /= postfix
         filename.parent.mkdir(parents=True, exist_ok=True)
 
@@ -136,9 +140,9 @@ class ExoShow:
         self.ss_props = {}
 
     def db_add_column(self,
-                   permanent=False,
-                   **kwargs,
-                   ):
+                      permanent=False,
+                      **kwargs,
+                      ):
 
         df = db.add_column(self.db_exoplanet if permanent else self.db_subset, **kwargs)
 
@@ -147,13 +151,12 @@ class ExoShow:
         self.db_subset = df
 
     def db_compute(self,
-                permanent=False,
-                **kwargs,
-                ):
+                   permanent=False,
+                   **kwargs,
+                   ):
 
         df = db.compute(self.db_exoplanet if permanent else self.db_subset, **kwargs)
 
         if permanent:
             self.db_exoplanet = df.copy()
         self.db_subset = df
-
