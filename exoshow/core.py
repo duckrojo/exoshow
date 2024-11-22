@@ -197,12 +197,19 @@ Plots the figure. Before this call, no matplotlib command was issued.
     #
     #######################################
 
-    def color(self, color):
-        self.layers[0].color = color
-        return self
+    def change(self, **kwargs):
+        correct_keys = ['color',
+                        'legend_title', 'legend_color',
+                        'legend_position', 'legend_fontsize',
+                        'marker', 'marker_size',
+                        'size_extreme']
+        for key, value in kwargs.items():
+            if key not in correct_keys:
+                print(f"Cannot change property '{key}'")
+                continue
+            for layer in self.layers:
+                setattr(layer, key, value)
 
-    def legend_title(self, string):
-        self.layers[0].legend_title = string
         return self
 
     #######################################
