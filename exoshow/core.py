@@ -171,7 +171,7 @@ Fixes ylim according to specific min-max or to the current range of dataset
             filename = f"{str(filename)}{postfix}"
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
 
-        f.savefig(filename)
+        f.savefig(filename, transparent=True)
 
     def _plot(self) -> plt.Figure:
         """
@@ -197,15 +197,27 @@ Plots the figure. Before this call, no matplotlib command was issued.
     #
     #######################################
 
+    def color(self, color):
+        self.layers[0].color = color
+        return self
+
+    def legend_title(self, string):
+        self.layers[0].legend_title = string
+        return self
+
+    #######################################
+    #
+    # DB functions
+    #
+    #######################################
+
     def db_reset(self):
         self.db_subset = self.db_exoplanet.copy()
         return self
 
-    def before(self, year, reset=False, legend_title=None):
+    def before(self, year, reset=False):
         if reset:
             self.db_reset()
-        if legend_title is not None:
-            self.layers[0].legend_title = legend_title
         self.db_subset = self.db_subset.loc[self.db_subset['discovered'].astype(float) <= year]
         return self
 
