@@ -1,6 +1,7 @@
 # properties initialization
 from pathlib import Path
 
+import numpy as np
 from matplotlib import pyplot as plt
 
 from exoshow import db
@@ -57,7 +58,7 @@ class ExoShow:
                        )
 
         if include_ss:
-            self.ss_layer = self.add_layer_ss()
+            self.ss_layer = self._add_layer_ss(base=2)  # high enough so that it will start with a blank base
         else:
             self.ss_layer = None
 
@@ -117,22 +118,42 @@ Fixes ylim according to specific min-max or to the current range of dataset
                   ):
         self.axes.set_ydata(label, string=string, logarithmic=logarithmic, inverted=inverted)
 
-    def add_layer_ss(self, zorder=20, **kwargs):
-        return self.add_layer(zorder=zorder, store=False, images="index", **kwargs)
+    def _add_layer_ss(self, zorder=20, **kwargs):
 
-    def add_layer(self, zorder=1, store=True,
-                  filter_by_name=None,
+        self.add_layer(zorder=zorder, images="index", **kwargs)
+        return self.layers.pop()
+
+    def add_layer(self,
+                  filter_non_empty: list = None,
+                  filter_eq: dict = None,
+                  filter_str: dict = None,
+                  base=0,
                   **kwargs,
-                  ) -> Layer:
-        layer = Layer(ids=filter_by_name,
-                      zorder=zorder,
-                      **kwargs,
-                      )
+                  ) -> "ExoShow":
+        if base >= len(self.layers):
+            layer_props = {}
+        else:
+            layer_props = self.layers[base].props()
 
-        if store:
-            self.layers.append(layer)
+        mask = np.array(len(self.db_exoplanet) * [True], dtype=bool)
+        filter_eq = filter_eq or {}
+        for key, val in filter_eq.items():
+            mask *= self.db_subset[key] == val
 
-        return layer
+        filter_str = filter_str or {}
+        for key, val in filter_str.items():
+            mask *= self.db_subset[key].str.contains(val, case=False)
+
+        filter_non_empty = filter_non_empty or []
+        for key in filter_non_empty:
+            mask *= ~self.db_subset[key].isna()
+
+        layer_props |= kwargs
+        layer = Layer(mask=mask, **layer_props)
+
+        self.layers.append(layer)
+
+        return self
 
     def del_layer(self, position=-1):
         """
@@ -197,18 +218,23 @@ Plots the figure. Before this call, no matplotlib command was issued.
     #
     #######################################
 
-    def change(self, **kwargs):
+    def change(self, layer=-1, **kwargs):
         correct_keys = ['color',
                         'legend_title', 'legend_color',
                         'legend_position', 'legend_fontsize',
                         'marker', 'marker_size',
                         'size_extreme']
+        if layer is None:
+            layers = range(len(self.layers))
+        else:
+            layers = [layer]
+
         for key, value in kwargs.items():
             if key not in correct_keys:
                 print(f"Cannot change property '{key}'")
                 continue
-            for layer in self.layers:
-                setattr(layer, key, value)
+            for layer in layers:
+                setattr(self.layers[layer], key, value)
 
         return self
 
@@ -231,6 +257,12 @@ Plots the figure. Before this call, no matplotlib command was issued.
     def filter_str(self, **kwargs):
         for key, value in kwargs.items():
             self.db_subset = self.db_subset.loc[self.db_subset[key].str.contains(value, case=False)]
+
+        return self
+
+    def filter_non_empty(self, *args):
+        for key in args:
+            self.db_subset = self.db_subset.loc[~self.db_subset[key].isna()]
 
         return self
 

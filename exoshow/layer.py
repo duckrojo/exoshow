@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
-from matplotlib.pyplot import axis
 
 from exoshow.definitions import default_color_dict, default_marker_dict
 from exoshow.axis import Axes
@@ -11,11 +10,11 @@ from exoshow.axis import Axes
 
 def _get_discrete_dicts(df, label, dictionary, columns, default):
     if label in columns:
-        output = df[label]
+        output = [lab.lower() for lab in df[label]]
         if label not in dictionary.keys():  # If no default marker exist for that column
             out_dict = {k: v for k, v in zip(set(output), default)}
         else:
-            out_dict = dictionary[label]
+            out_dict = {k.lower(): v for k, v in dictionary[label].items()}
     else:
         output = np.array([None] * len(df))
         out_dict = {None: label}
@@ -24,7 +23,7 @@ def _get_discrete_dicts(df, label, dictionary, columns, default):
 
 class Layer:
     def __init__(self,
-                 ids: list[str] | None = None,
+                 mask: list[str] | None = None,
                  marker: str = 'x',
                  color: str = 'k',
                  marker_size: float = 1,
@@ -38,6 +37,8 @@ class Layer:
                  legend_position: str = 'lower right',
                  legend_title: str = None,
                  legend_fontsize: int = 9,
+                 marker_dicts: dict | None = None,
+                 color_dicts: dict | None = None,
                  ):
         """
 
@@ -49,7 +50,7 @@ class Layer:
             to use images, set the str to column value
         image_size:
             percent extent of images
-        ids: [str, ...], None
+        mask: [str, ...], None
             name of targets that can be drawn in this layer. If None, all targets will be drawn/
         marker: str
             name of column to group for markers or marker to use
@@ -60,7 +61,7 @@ class Layer:
         size_extreme: (float, float)
            Min and Max size of the marker in percent if taken from column value. By default, 1%-5%
         """
-        self.ids = ids
+        self.ids = mask
 
         self.zorder = zorder
 
@@ -82,8 +83,17 @@ class Layer:
         self.marker_size = marker_size
         self.marker = marker
         self.color = color
-        self.marker_dicts = default_marker_dict
-        self.color_dicts = default_color_dict
+        self.marker_dicts = marker_dicts or default_marker_dict
+        self.color_dicts = color_dicts or default_color_dict
+
+    def props(self):
+        elements = ['zorder', 'images', 'image_size',
+                    'legend_color', 'legend_position', 'legend_title', 'legend_fontsize',
+                    'size_extreme', 'annotate_size', 'annotate',
+                    'marker_size', 'marker', 'color',
+                    'marker_dicts', 'color_dicts']
+
+        return {k: getattr(self, k) for k in elements}
 
     def __hash__(self):
         return (self.ids,
@@ -125,7 +135,7 @@ class Layer:
         ax.set_xlim(xlims)
         ax.set_ylim(ylims)
 
-        valid = df if self.ids is None else df.loc[df.index.isin(self.ids)]
+        valid = df if len(self.ids) != len(df) or self.ids is None else df.loc[self.ids]
         columns = valid.columns.tolist()
 
         nn = len(valid)
@@ -180,7 +190,9 @@ class Layer:
             marker_size_scaled = np.array([3*((x1 - x0) * self.marker_size / 200)**2] * nn)
 
         for m in marker_dict.keys():
-            group = np.array([m.lower() in mk.lower() for mk in marker])
+            if isinstance(m, str):
+                m = m.lower()
+            group = np.array([m is mk or m in mk for mk in marker])
             if group.sum() == 0:
                 continue
             label = f"{m} ({group.sum()})"

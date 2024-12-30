@@ -82,6 +82,7 @@ Start from empty figure
 
     def plot(self,
              ):
+        """Plot axes frame. It always start from empty figure so, it must be run before any other plotting function"""
         self.clear()
         ax = self.new_ax()
         ax.axis('on')
